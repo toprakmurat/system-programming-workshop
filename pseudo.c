@@ -1,9 +1,11 @@
 #include <linux/module.h>
 #include <linux/cdev.h>
 #include <linux/fs.h>
+#include <linux/uaccess.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Murat Toprak");
+MODULE_DESCRIPTION("Basic character device driver implementation");
 
 static int pseudo_major = 0;
 static int pseudo_minor = 0;
@@ -37,15 +39,10 @@ ssize_t pseudo_read(struct file *filp, char __user *buf,
 		return -ERESTARTSYS;
 	}
 
-	// if (*f_pos >= capacity) {*f_pos = 0;}
-
-	// if (*f_pos + count > capacity) {
-	// 	count = capacity - *f_pos;
-	// }
-
 	for (i = 0; i < count; ++i) {
 		if (*f_pos >= capacity) { *f_pos = 0; }
 
+		// copy_to_user(destination, source, size)
 		err = copy_to_user(buf + i, pseudo_data + *f_pos, 1);
 		if (err != 0) {
 			up(&pseudo_sem);
@@ -57,11 +54,45 @@ ssize_t pseudo_read(struct file *filp, char __user *buf,
 	return count;
 }
 
+ssize_t pseudo_write(struct file *filp, const char __user *buf,
+					size_t count, loff_t *f_pos) {
+	int err = 0;
+
+	// Check availability
+	if (down_interruptible(&pseudo_sem)) {
+		return -ERESTARTSYS;
+	}
+
+	// wrote all
+	if (*f_pos >= capacity) {
+		goto out;
+	}
+
+	// partial write
+	if (*f_pos + count > capacity) {
+		count = capacity - *f_pos;
+	}
+
+	// where the magic happens
+	err = copy_from_user(pseudo_data + *f_pos, buf, count);
+	if (err != 0) {
+		up(&pseudo_sem);
+		return -EFAULT;
+	}
+
+	(*f_pos) += count;
+
+out:
+	up(&pseudo_sem);
+	return count;
+}
+
 struct file_operations pseudo_fops = {
 	.owner = THIS_MODULE,
 	.open = pseudo_open,
 	.release = pseudo_release,
 	.read = pseudo_read,
+	.write = pseudo_write,
 };
 
 void pseudo_fill(void) {
