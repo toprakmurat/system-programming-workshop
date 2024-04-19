@@ -87,12 +87,41 @@ out:
 	return count;
 }
 
+loff_t pseudo_llseek(struct file *filp, loff_t off, int whence) {
+	loff_t newpos = 0;
+
+	switch(whence) {
+	// SEEK_SET: from beginning, SEEK_CUR: from current, SEEK_END: from end
+	case SEEK_SET: 
+		newpos = off;
+		break;
+
+	case SEEK_CUR:
+		newpos = filp->f_pos + off;
+		break;
+
+	case SEEK_END:
+		newpos = capacity + off - 1;
+		break;
+
+	// default can't happen
+	}
+
+	if (newpos < 0 || newpos >= capacity) 
+		return -EINVAL;
+
+	filp->f_pos = newpos;
+	return newpos;
+
+}
+
 struct file_operations pseudo_fops = {
 	.owner = THIS_MODULE,
 	.open = pseudo_open,
 	.release = pseudo_release,
 	.read = pseudo_read,
 	.write = pseudo_write,
+	.llseek = pseudo_llseek,
 };
 
 void pseudo_fill(void) {
