@@ -2,6 +2,9 @@
 #include <linux/cdev.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
+#include <linux/ioctl.h>
+
+#define PSEUDO_INC _IOW('p', 1, signed char)
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Murat Toprak");
@@ -115,6 +118,33 @@ loff_t pseudo_llseek(struct file *filp, loff_t off, int whence) {
 
 }
 
+/* unlocked ioctl, without taking the file's lock */
+long pseudo_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
+	signed char increment;
+	int err;
+	int i;
+
+	switch(cmd) {
+	case PSEUDO_INC:
+		// Copy the ioctl argument from user space to kernel space
+		err = copy_from_user(&increment, (signed char __user *)arg, sizeof(signed char));
+		if (err < 0) {
+			return -EFAULT;
+		}
+
+		// Perform the PSEUDO_INC operation
+		// iterate over each byte in the device buffer and increment that byte with the given value
+		for (i = 0; i < capacity; i++) {
+			pseudo_data[i] += increment;
+		}
+		break;
+	
+	default:
+		return -ENOTTY;  // invalid ioctl
+	}
+	return 0;
+}
+
 struct file_operations pseudo_fops = {
 	.owner = THIS_MODULE,
 	.open = pseudo_open,
@@ -122,6 +152,7 @@ struct file_operations pseudo_fops = {
 	.read = pseudo_read,
 	.write = pseudo_write,
 	.llseek = pseudo_llseek,
+	.unlocked_ioctl = pseudo_ioctl,
 };
 
 void pseudo_fill(void) {
