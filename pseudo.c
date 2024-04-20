@@ -3,6 +3,7 @@
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/ioctl.h>
+#include <linux/device.h>
 
 #define PSEUDO_INC _IOW('p', 1, signed char)
 
@@ -20,6 +21,9 @@ static int capacity = 0;
 static char *pseudo_data = NULL;
 
 module_param(capacity, int, S_IRUGO);
+
+static struct class *pseudo_class;
+static struct device *pseudo_device;
 
 int pseudo_open(struct inode *inode, struct file *filp) {
 	printk(KERN_DEBUG "pseudo: opening device\n");
@@ -192,15 +196,51 @@ static int pseudo_init(void) {
 	if (err != 0) {
 		printk(KERN_NOTICE "Error %d adding pseudo device\n", err);
 	}
+
+	// Create a device class
+	pseudo_class = class_create("pseudo");
+	if (IS_ERR(pseudo_class)) {
+		printk(KERN_ERR "pseudo: failed to register device class\n");
+        return PTR_ERR(pseudo_class);
+	}
+
+	// Create the device node
+	/* 
+	struct device *device_create(
+		struct class *class: device class to which the new device belongs, 
+		struct device *parent: parent device of the new device, NULL if not, 
+		dev_t devt: device number of the new device,
+		void *drvdata: device specific data, NULL if not, 
+		const char *fmt: name of the new device,
+		...);
+	*/
+	pseudo_device = device_create(pseudo_class, NULL, devno, NULL, "pseudo");
+	if (IS_ERR(pseudo_device)) {
+		printk(KERN_ERR "pseudo: failed to create the device node\n");
+		return PTR_ERR(pseudo_device);
+	}
+
+	printk(KERN_INFO "pseudo: device has been created successfully");
 	return 0;
 }
 
 static void pseudo_exit(void) {
 	dev_t devno = 0;
-
-	cdev_del(&pseudo_cdev);
 	devno = MKDEV(pseudo_major, pseudo_minor);
+
+	// Remove the device node
+	device_destroy(pseudo_class, devno);
+
+	// Remove the device class
+	class_destroy(pseudo_class);
+
+	// Remove the character device
+	cdev_del(&pseudo_cdev);
+
+	// Unregister the major number 
 	unregister_chrdev_region(devno, 1);
+	
+	// Free the buffer
 	kfree(pseudo_data);
 }
 
