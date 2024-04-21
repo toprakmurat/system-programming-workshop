@@ -4,6 +4,9 @@
 #include <linux/uaccess.h>
 #include <linux/ioctl.h>
 #include <linux/device.h>
+#include <linux/proc_fs.h>
+#include <linux/kernel.h>
+#include <linux/seq_file.h>
 
 #define PSEUDO_INC _IOW('p', 1, signed char)
 
@@ -24,6 +27,25 @@ module_param(capacity, int, S_IRUGO);
 
 static struct class *pseudo_class;
 static struct device *pseudo_device;
+
+struct proc_dir_entry *pseudo_proc;
+
+static int pseudo_proc_show(struct seq_file *m, void *v) {
+	seq_printf(m, "pseudo: capacity is %d\n", capacity);
+	return 0;
+}
+
+static int pseudo_proc_open(struct inode *inode, struct file *file) {
+	return single_open(file, pseudo_proc_show, NULL);
+}
+
+static const struct proc_ops pseudo_proc_ops = {
+	.proc_open = pseudo_proc_open,
+	.proc_read = seq_read,
+	.proc_lseek = seq_lseek,
+	.proc_release = single_release,
+};
+
 
 int pseudo_open(struct inode *inode, struct file *filp) {
 	printk(KERN_DEBUG "pseudo: opening device\n");
@@ -159,6 +181,8 @@ struct file_operations pseudo_fops = {
 	.unlocked_ioctl = pseudo_ioctl,
 };
 
+
+
 void pseudo_fill(void) {
 	for (int i = 0; i < capacity; ++i)
 		pseudo_data[i] = i;
@@ -220,6 +244,8 @@ static int pseudo_init(void) {
 		return PTR_ERR(pseudo_device);
 	}
 
+	pseudo_proc = proc_create("pseudo", 0777, NULL, &pseudo_proc_ops);
+
 	printk(KERN_INFO "pseudo: device has been created successfully");
 	return 0;
 }
@@ -239,6 +265,9 @@ static void pseudo_exit(void) {
 
 	// Unregister the major number 
 	unregister_chrdev_region(devno, 1);
+
+	// Remove the /proc entry
+    remove_proc_entry("pseudo", NULL);
 	
 	// Free the buffer
 	kfree(pseudo_data);
@@ -246,3 +275,4 @@ static void pseudo_exit(void) {
 
 module_init(pseudo_init);
 module_exit(pseudo_exit);
+
