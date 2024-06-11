@@ -9,7 +9,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include "cats.h"
+#include "fuse.h"
 
 struct file {
     char *name;
@@ -20,6 +20,7 @@ struct file {
 
 struct file *head = NULL;
 
+// Helper logging function
 void log_message(const char *format, ...) {
     va_list args;
     va_start(args, format);
@@ -28,6 +29,7 @@ void log_message(const char *format, ...) {
     va_end(args);
 }
 
+// Helper function to keep track of files
 struct file* find_file(const char *name) {
     struct file *current = head;
     while (current != NULL) {
@@ -122,6 +124,7 @@ static int cats_write(
 ) {
     struct file *file = find_file(path + 1);
     if (file == NULL) {
+        log_message("Could not find the file");
         return -ENOENT;
     }
 
@@ -165,6 +168,28 @@ static int cats_create(const char *path, mode_t mode,
     return 0;
 }
 
+// Needed when opening a file that is already created in write mode
+static int cats_truncate(const char *path, off_t size) {
+    int fd;
+    
+    fd = open(path + 1, O_WRONLY);
+    if (fd == -1) {
+        log_message("Could not open the file");
+        return -errno;
+    }
+
+    int res = ftruncate(fd, size);
+    if (res == -1) {
+        log_message("File truncation failed");
+        close(fd);
+        return -errno;
+    }
+
+    close(fd);
+    return 0;
+
+}
+
 static struct fuse_operations cats_ops = {
     .getattr = cats_getattr,
     .readdir = cats_readdir,
@@ -172,6 +197,7 @@ static struct fuse_operations cats_ops = {
     .read = cats_read,
     .write = cats_write,
     .create = cats_create,
+    .truncate = cats_truncate,
 };
 
 int main(int argc, char *argv[]) {

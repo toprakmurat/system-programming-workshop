@@ -1,15 +1,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <errno.h>
 #include <string.h>
-#include <fctnl.h>
+#include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <curl/curl.h>
 #include <cjson/cJSON.h>
 
+#include "fillData.h"
+
 #define MAX_BREEDS 120
-#define MAX_BREED_NAME_LEN 50
+#define MAX_BREED_NAME_LEN 80
 #define MAX_URL_LEN 100
 
 static const char *BREEDS_URL = "https://catfact.ninja/breeds";
@@ -39,7 +43,7 @@ static size_t write_buf(
 	char *ptr = realloc(buf->data, buf->size + real_size + 1);
 	buf->data = ptr;
 
-	memcpy(buf->data[buf->size], contents, real_size);
+	memcpy(&(buf->data[buf->size]), contents, real_size);
 	buf->size += real_size;
 	buf->data[buf->size] = 0;
 
@@ -117,31 +121,114 @@ static void fill_breed_names() {
     }
 }
 
-static int write_file(const char *path) {
-	FILE *fp = fopen(path, "w");
-	if (fp == NULL) {
-		return -errno;
-	}
-
-	char data[10 * MAX_BREED_NAME_LEN];
-
-
-	return 0;
+// Helper function to check if the given file exists or not
+static int file_exists(const char *filename) {
+    struct stat buf;
+    return (stat(filename, &buf) == 0);
 }
 
-static int read_file(const char *path) {
-	FILE *fp = fopen(path, "r");
+/*
+static char *strcat_multiple(int count, ...) {
+    char *dest;
+
+    va_list args;
+    va_start(args, dest);
+    for (int i = 0; i < count; i++) {
+        va_arg(args, const char *);
+    }
+
+    va_end(args);
+    return dest;
+}
+*/
+
+// Helper function to get the size of the file
+static int get_file_size(const char *filename, off_t *size) {
+    struct stat buf;
+    if (stat(filename, &buf) == -1) {
+        // TODO: error code
+        return -errno;
+    }
+
+    *size = buf.st_size;
+    return 0; // success
+}
+
+static int write_file(const char *filename, const char *buf) {
+    FILE *fp = fopen(filename, "w");
+    if (fp == NULL) {
+        // TODO: error code
+        return 0;
+    }
+
+    int i = 0;
+    for (i = 0; buf[i] != '\0'; i++) {
+        fputc(buf[i], fp);
+    }
+
+    fclose(fp);
+	return i;
+}
+
+static int read_file(const char *filename, char *buf, size_t size) {
+    if (!(file_exists(filename))) {
+        // TODO: error code
+        return 0;
+    }
+
+	FILE *fp = fopen(filename, "r");
 	if (fp == NULL) {
+        // TODO: error code
 		return -errno;
 	}
 
+    int i = 0;
+    for (i = 0; i < size; i++) {
+        buf[i] = fgetc(fp);
+    }
+    buf[i] = '\0';
+
+    fclose(fp);
 	return 0;
 }
 
 int main(int argc, char *argv[]) {
     curl_global_init(CURL_GLOBAL_ALL);
     fill_breed_names();
-    /* cur_global_cleanup(); */
-    // FILE OPERATIONS
+
+    // write into files started
+    for (int i = 0; i < n_breeds; i++) {
+        char dir[MAX_BREED_NAME_LEN * 10] = "catSpecies/";
+        strcat(dir, breeds[i]);
+        
+        char data[MAX_BREED_NAME_LEN * 20] = "";
+        sprintf(data, "breed: %s\ncountry: %s\norigin: %s\ncoat: %s\npattern: %s",
+                breeds[i], countries[i], origins[i], coats[i], patterns[i]);
+
+        write_file(dir, data);
+    }
+    // writing ended
+
+    /*
+    // read from files started
+    char data[MAX_BREED_NAME_LEN * 20] = "";
+    for (int i = 0; i < 1; i++) {
+        char dir[MAX_BREED_NAME_LEN * 10] = "catSpecies/";
+        strcat(dir, breeds[i]);
+
+        off_t size;
+        int res = get_file_size(dir, &size);
+        if (res == 0) {
+            read_file(dir, data, size); 
+        }
+    }
+
+    for (int i = 0; data[i] != '\0'; i++) {
+        printf("%c", data[i]);
+    }
+    printf("\n");
+    // read from files ended
+    */
+
     return 0;
 }
